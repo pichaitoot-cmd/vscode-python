@@ -4,7 +4,7 @@
 import { CancellationTokenSource, DebugSessionOptions, TestRun, TestRunProfileKind, Uri } from 'vscode';
 import * as path from 'path';
 import { ChildProcess } from 'child_process';
-import { IConfigurationService, ITestOutputChannel } from '../../../common/types';
+import { IConfigurationService } from '../../../common/types';
 import { Deferred } from '../../../common/utils/async';
 import { traceError, traceInfo, traceVerbose } from '../../../logging';
 import { ExecutionTestPayload, ITestExecutionAdapter, ITestResultResolver } from '../common/types';
@@ -25,7 +25,6 @@ import { getEnvironment, runInBackground, useEnvExtension } from '../../../envEx
 export class PytestTestExecutionAdapter implements ITestExecutionAdapter {
     constructor(
         public configSettings: IConfigurationService,
-        private readonly outputChannel: ITestOutputChannel,
         private readonly resultResolver?: ITestResultResolver,
         private readonly envVarsService?: IEnvironmentVariablesProvider,
     ) {}
@@ -144,7 +143,6 @@ export class PytestTestExecutionAdapter implements ITestExecutionAdapter {
             const spawnOptions: SpawnOptions = {
                 cwd,
                 throwOnStdErr: true,
-                outputChannel: this.outputChannel,
                 env: mutableEnv,
                 token: runInstance?.token,
             };
@@ -192,15 +190,12 @@ export class PytestTestExecutionAdapter implements ITestExecutionAdapter {
                     proc.stdout.on('data', (data) => {
                         const out = utils.fixLogLinesNoTrailing(data.toString());
                         runInstance?.appendOutput(out);
-                        this.outputChannel?.append(out);
                     });
                     proc.stderr.on('data', (data) => {
                         const out = utils.fixLogLinesNoTrailing(data.toString());
                         runInstance?.appendOutput(out);
-                        this.outputChannel?.append(out);
                     });
                     proc.onExit((code, signal) => {
-                        this.outputChannel?.append(utils.MESSAGE_ON_TESTING_OUTPUT_MOVE);
                         if (code !== 0) {
                             traceError(
                                 `Subprocess exited unsuccessfully with exit code ${code} and signal ${signal} on workspace ${uri.fsPath}`,
@@ -238,19 +233,15 @@ export class PytestTestExecutionAdapter implements ITestExecutionAdapter {
 
                 // Take all output from the subprocess and add it to the test output channel. This will be the pytest output.
                 // Displays output to user and ensure the subprocess doesn't run into buffer overflow.
-                // TODO: after a release, remove run output from the "Python Test Log" channel and send it to the "Test Result" channel instead.
                 result?.proc?.stdout?.on('data', (data) => {
                     const out = utils.fixLogLinesNoTrailing(data.toString());
                     runInstance?.appendOutput(out);
-                    this.outputChannel?.append(out);
                 });
                 result?.proc?.stderr?.on('data', (data) => {
                     const out = utils.fixLogLinesNoTrailing(data.toString());
                     runInstance?.appendOutput(out);
-                    this.outputChannel?.append(out);
                 });
                 result?.proc?.on('exit', (code, signal) => {
-                    this.outputChannel?.append(utils.MESSAGE_ON_TESTING_OUTPUT_MOVE);
                     if (code !== 0) {
                         traceError(
                             `Subprocess exited unsuccessfully with exit code ${code} and signal ${signal} on workspace ${uri.fsPath}`,
