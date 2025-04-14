@@ -28,7 +28,6 @@ namedpipe; platform_system == "Windows"
 # typing for Django files
 django-stubs
 
-# for coverage
 coverage
 pytest-cov
 pytest-json
