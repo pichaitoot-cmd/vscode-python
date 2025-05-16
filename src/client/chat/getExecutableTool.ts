@@ -16,40 +16,31 @@ import { PythonExtension } from '../api/types';
 import { IServiceContainer } from '../ioc/types';
 import { ICodeExecutionService } from '../terminals/types';
 import { TerminalCodeExecutionProvider } from '../terminals/codeExecution/terminalCodeExecution';
-import { IProcessServiceFactory, IPythonExecutionFactory } from '../common/process/types';
-import { getEnvironmentDetails, raceCancellationError } from './utils';
+import { getEnvDisplayName, getEnvironmentDetails, raceCancellationError } from './utils';
 import { resolveFilePath } from './utils';
-import { getPythonPackagesResponse } from './listPackagesTool';
+import { traceError } from '../logging';
 import { ITerminalHelper } from '../common/terminal/types';
+import { IDiscoveryAPI } from '../pythonEnvironments/base/locator';
 
 export interface IResourceReference {
     resourcePath?: string;
 }
 
-export class GetEnvironmentInfoTool implements LanguageModelTool<IResourceReference> {
+export class GetExecutableTool implements LanguageModelTool<IResourceReference> {
     private readonly terminalExecutionService: TerminalCodeExecutionProvider;
-    private readonly pythonExecFactory: IPythonExecutionFactory;
-    private readonly processServiceFactory: IProcessServiceFactory;
     private readonly terminalHelper: ITerminalHelper;
-    public static readonly toolName = 'get_python_environment_info';
+    public static readonly toolName = 'get_python_executable';
     constructor(
         private readonly api: PythonExtension['environments'],
         private readonly serviceContainer: IServiceContainer,
+        private readonly discovery: IDiscoveryAPI,
     ) {
         this.terminalExecutionService = this.serviceContainer.get<TerminalCodeExecutionProvider>(
             ICodeExecutionService,
             'standard',
         );
-        this.pythonExecFactory = this.serviceContainer.get<IPythonExecutionFactory>(IPythonExecutionFactory);
-        this.processServiceFactory = this.serviceContainer.get<IProcessServiceFactory>(IProcessServiceFactory);
         this.terminalHelper = this.serviceContainer.get<ITerminalHelper>(ITerminalHelper);
     }
-    /**
-     * Invokes the tool to get the information about the Python environment.
-     * @param options - The invocation options containing the file path.
-     * @param token - The cancellation token.
-     * @returns The result containing the information about the Python environment or an error message.
-     */
     async invoke(
         options: LanguageModelToolInvocationOptions<IResourceReference>,
         token: CancellationToken,
@@ -57,45 +48,35 @@ export class GetEnvironmentInfoTool implements LanguageModelTool<IResourceRefere
         const resourcePath = resolveFilePath(options.input.resourcePath);
 
         try {
-            // environment
-            const envPath = this.api.getActiveEnvironmentPath(resourcePath);
-            const environment = await raceCancellationError(this.api.resolveEnvironment(envPath), token);
-            if (!environment || !environment.version) {
-                throw new Error('No environment found for the provided resource path: ' + resourcePath?.fsPath);
-            }
-            const packages = await getPythonPackagesResponse(
-                environment,
-                this.pythonExecFactory,
-                this.processServiceFactory,
-                resourcePath,
-                token,
-            );
-
             const message = await getEnvironmentDetails(
                 resourcePath,
                 this.api,
                 this.terminalExecutionService,
                 this.terminalHelper,
-                packages,
+                undefined,
                 token,
             );
-
             return new LanguageModelToolResult([new LanguageModelTextPart(message)]);
         } catch (error) {
             if (error instanceof CancellationError) {
                 throw error;
             }
+            traceError('Error while getting environment information', error);
             const errorMessage: string = `An error occurred while fetching environment information: ${error}`;
             return new LanguageModelToolResult([new LanguageModelTextPart(errorMessage)]);
         }
     }
 
     async prepareInvocation?(
-        _options: LanguageModelToolInvocationPrepareOptions<IResourceReference>,
-        _token: CancellationToken,
+        options: LanguageModelToolInvocationPrepareOptions<IResourceReference>,
+        token: CancellationToken,
     ): Promise<PreparedToolInvocation> {
+        const resourcePath = resolveFilePath(options.input.resourcePath);
+        const envName = await raceCancellationError(getEnvDisplayName(this.discovery, resourcePath, this.api), token);
         return {
-            invocationMessage: l10n.t('Fetching Python environment information'),
+            invocationMessage: envName
+                ? l10n.t('Fetching Python executable information for {0}', envName)
+                : l10n.t('Fetching Python executable information'),
         };
     }
 }

@@ -11,18 +11,17 @@ import {
     LanguageModelToolInvocationPrepareOptions,
     LanguageModelToolResult,
     PreparedToolInvocation,
-    Uri,
 } from 'vscode';
 import { PythonExtension } from '../api/types';
 import { IServiceContainer } from '../ioc/types';
-import { raceCancellationError } from './utils';
+import { getEnvDisplayName, raceCancellationError } from './utils';
 import { resolveFilePath } from './utils';
 import { IModuleInstaller } from '../common/installer/types';
 import { ModuleInstallerType } from '../pythonEnvironments/info';
 import { IDiscoveryAPI } from '../pythonEnvironments/base/locator';
 
 export interface IInstallPackageArgs {
-    resourcePath: string;
+    resourcePath?: string;
     packageList: string[];
 }
 
@@ -52,7 +51,7 @@ export class InstallPackagesTool implements LanguageModelTool<IInstallPackageArg
             const envPath = this.api.getActiveEnvironmentPath(resourcePath);
             const environment = await raceCancellationError(this.api.resolveEnvironment(envPath), token);
             if (!environment || !environment.version) {
-                throw new Error('No environment found for the provided resource path: ' + resourcePath.fsPath);
+                throw new Error('No environment found for the provided resource path: ' + resourcePath?.fsPath);
             }
             const isConda = (environment.environment?.type || '').toLowerCase() === 'conda';
             const installers = this.serviceContainer.getAll<IModuleInstaller>(IModuleInstaller);
@@ -118,15 +117,5 @@ export class InstallPackagesTool implements LanguageModelTool<IInstallPackageArg
             confirmationMessages: { title, message },
             invocationMessage,
         };
-    }
-}
-
-async function getEnvDisplayName(discovery: IDiscoveryAPI, resource: Uri, api: PythonExtension['environments']) {
-    try {
-        const envPath = api.getActiveEnvironmentPath(resource);
-        const env = await discovery.resolveEnv(envPath.path);
-        return env?.display || env?.name;
-    } catch {
-        return;
     }
 }
